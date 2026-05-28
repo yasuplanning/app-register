@@ -135,6 +135,39 @@ export type PlayedRegisterSound = {
   sound: string;
 };
 
+// パスごとに Audio 要素をキャッシュして事前読み込みしておく。
+// こうすると再生時にネットワーク待ちが無く、検索タブ（window.open）が
+// フォーカスを奪う前にユーザー操作の延長で確実に再生を開始できる。
+const audioCache = new Map<string, HTMLAudioElement>();
+
+function getAudio(path: string): HTMLAudioElement | null {
+  if (typeof Audio === "undefined") return null;
+  let audio = audioCache.get(path);
+  if (!audio) {
+    audio = new Audio(path);
+    audio.preload = "auto";
+    audioCache.set(path, audio);
+  }
+  return audio;
+}
+
+function allSoundPaths(): string[] {
+  const paths: string[] = [];
+  for (const list of Object.values(CATEGORY_SOUNDS)) paths.push(...list);
+  paths.push(...RARE_SOUNDS, UNKNOWN_SOUND);
+  return paths;
+}
+
+/**
+ * 全音声を事前読み込みしてキャッシュを温める。マウント時などに呼ぶ。
+ */
+export function preloadRegisterSounds(): void {
+  if (typeof Audio === "undefined") return;
+  for (const path of allSoundPaths()) {
+    getAudio(path)?.load();
+  }
+}
+
 /**
  * バーコード読み取り直後に即時再生する。
  * 検索処理とは独立して動作し、再生失敗してもUIや検索は止めない。
@@ -147,13 +180,17 @@ export function playRegisterSound(code: string): PlayedRegisterSound {
   const sound = pickRegisterSound(code);
 
   try {
-    const audio = new Audio(sound);
-    // play() は Promise を返すので、自動再生制限などで失敗しても握りつぶさず警告に留める
-    void audio.play().catch((err) => {
-      console.warn("[registerSounds] 音声の再生に失敗しました:", sound, err);
-    });
+    const audio = getAudio(sound);
+    if (audio) {
+      // 同じクリップが再生中でも頭から鳴らし直す
+      audio.currentTime = 0;
+      // play() は Promise を返すので、自動再生制限などで失敗しても握りつぶさず警告に留める
+      void audio.play().catch((err) => {
+        console.warn("[registerSounds] 音声の再生に失敗しました:", sound, err);
+      });
+    }
   } catch (err) {
-    console.warn("[registerSounds] Audio の生成に失敗しました:", sound, err);
+    console.warn("[registerSounds] Audio の再生に失敗しました:", sound, err);
   }
 
   return { category, sound };

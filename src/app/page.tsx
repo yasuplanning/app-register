@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useBarcodeKeyboard } from "@/components/useBarcodeKeyboard";
-import { playRegisterSound } from "@/lib/registerSounds";
+import { playRegisterSound, preloadRegisterSounds } from "@/lib/registerSounds";
 
 type Mode = "shopping" | "book";
 
 const DEDUP_WINDOW_MS = 1500;
+// 音声の再生開始を優先するため、検索タブを開くまでの僅かな遅延（ms）。
+const SEARCH_OPEN_DELAY_MS = 150;
 
 function buildSearchUrl(mode: Mode, digits: string): string {
   if (mode === "book") {
@@ -25,6 +27,11 @@ export default function Home() {
 
   const lastCodeRef = useRef<string>("");
   const lastTimeRef = useRef<number>(0);
+
+  // 音声を事前読み込みしてキャッシュを温めておく（初回スキャン時の遅延を防ぐ）。
+  useEffect(() => {
+    preloadRegisterSounds();
+  }, []);
 
   const runSearch = useCallback((raw: string) => {
     // 読み取り直後にまず音声を即時再生する（検索を待たない／独立して実行）。
@@ -57,7 +64,11 @@ export default function Home() {
 
     const url = buildSearchUrl(modeRef.current, digits);
     if (typeof window !== "undefined") {
-      window.open(url, "_blank", "noopener,noreferrer");
+      // 別タブを即時に開くとフォーカスを奪い、再生開始直前の音声が中断される。
+      // 音声を確実に鳴らしてから開く（ユーザー操作の有効期間内なのでタブは開ける）。
+      window.setTimeout(() => {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }, SEARCH_OPEN_DELAY_MS);
     }
     setLastSearched(digits);
   }, []);
