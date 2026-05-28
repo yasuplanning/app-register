@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useBarcodeKeyboard } from "@/components/useBarcodeKeyboard";
+import { playRegisterSound } from "@/lib/registerSounds";
 
 type Mode = "shopping" | "book";
 
@@ -26,6 +27,20 @@ export default function Home() {
   const lastTimeRef = useRef<number>(0);
 
   const runSearch = useCallback((raw: string) => {
+    // 読み取り直後にまず音声を即時再生する（検索を待たない／独立して実行）。
+    // この呼び出しはバーコード入力イベント＝ユーザー操作の延長なので Audio 再生が許可される。
+    const { category, sound } = playRegisterSound(raw);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        `[register] barcode=${raw} category=${category} selectedSound=${sound}`,
+      );
+    }
+
+    // JAN/ISBN/UPC でない不明コードは検索に進まず、音声だけ再生して終了。
+    if (category === "unknown") {
+      return;
+    }
+
     const digits = raw.replace(/\D/g, "");
     if (!digits) return;
 
